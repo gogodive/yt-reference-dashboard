@@ -15,6 +15,7 @@ import yaml
 
 from src import notion as notion_props
 from src.merge import merge_videos
+from src.youtube import guess_format
 
 log = logging.getLogger(__name__)
 
@@ -68,11 +69,15 @@ def _collect_channel(client, channel: dict, prev: dict, config: dict,
     ids = client.get_video_ids_since(meta["uploads_playlist_id"], cutoff, limit)
     fresh = client.get_videos_details(ids)
 
-    # 쇼츠/롱폼 판별은 새 영상에 대해서만 1회 수행 (저장분은 merge 에서 유지)
+    # 쇼츠/롱폼 판별은 새 영상에 대해서만 수행 (저장분은 merge 에서 유지).
+    # 채널당 쇼츠 재생목록을 한 번만 훑어서 판별한다 — 영상마다 요청을 보내면
+    # 편수가 많은 채널에서 한없이 느려진다.
     known_format = {v["video_id"]: v.get("format") for v in prev.get("videos", [])}
-    for f in fresh:
-        if not known_format.get(f["video_id"]):
-            f["format"] = "shorts" if client.is_short(f["video_id"], f["duration"]) else "long"
+    unknown = [f for f in fresh if not known_format.get(f["video_id"])]
+    if unknown:
+        shorts_ids = client.get_shorts_video_ids(meta["channel_id"])
+        for f in unknown:
+            f["format"] = guess_format(f["duration"], shorts_ids, f["video_id"])
 
     videos = merge_videos(prev.get("videos", []), fresh, now,
                           freeze_days=freeze_days, limit=limit)

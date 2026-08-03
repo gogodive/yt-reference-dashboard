@@ -226,21 +226,50 @@ class YouTubeClient:
             out.extend(parse_video_item(it) for it in resp.get("items", []))
         return out
 
-    def is_short(self, video_id: str, duration: int) -> bool:
-        """쇼츠 여부. /shorts/{id} 가 200이면 쇼츠, 리다이렉트면 롱폼.
+    def get_shorts_video_ids(self, channel_id: str, limit: int = 2000) -> set[str] | None:
+        """채널의 쇼츠 전용 재생목록(UUSH…)에 담긴 영상 ID 집합.
 
-        3분 초과 영상은 쇼츠일 수 없어 요청을 생략한다.
-        확인 실패 시 60초 이하만 쇼츠로 추정.
+        업로드 재생목록 UU… 와 짝을 이루는 숨은 재생목록이다.
+        영상마다 youtube.com 에 HTTP 요청을 보내는 방식은 편수가 많아지면
+        느려지고 차단당하기 쉬워서, 채널당 재생목록 한 번 훑기로 대체했다.
+
+        재생목록이 없는 채널(쇼츠를 한 번도 올리지 않은 경우 등)은 None 을 돌려주고,
+        호출부가 길이 휴리스틱으로 폴백한다.
         """
-        if duration > SHORTS_MAX_SECONDS:
-            return False
+        if not channel_id.startswith("UC"):
+            return None
+        playlist_id = f"UUSH{channel_id[2:]}"
+        ids: set[str] = set()
+        page_token = None
         try:
-            r = self.session.head(f"https://www.youtube.com/shorts/{video_id}",
-                                  allow_redirects=False, timeout=10)
-            if r.status_code == 200:
-                return True
-            if 300 <= r.status_code < 400:
-                return False
-        except requests.RequestException:
-            log.warning("쇼츠 판별 실패: %s — 길이로 추정", video_id)
-        return duration <= 60
+            while len(ids) < limit:
+                params = {"part": "contentDetails", "playlistId": playlist_id,
+                          "maxResults": 50}
+                if page_token:
+                    params["pageToken"] = page_token
+                resp = self._get("playlistItems", **params)
+                items = resp.get("items", [])
+                if not items:
+                    break
+                ids.update(it["contentDetails"]["videoId"] for it in items)
+                page_token = resp.get("nextPageToken")
+                if not page_token:
+                    break
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            if status == 404:
+                log.info("%s: 쇼츠 재생목록 없음 — 길이로 판별", channel_id)
+            else:
+                log.warning("%s: 쇼츠 재생목록 조회 실패(%s) — 길이로 판별",
+                            channel_id, status)
+            return None
+        return ids
+
+
+def guess_format(duration: int, shorts_ids: set[str] | None, video_id: str) -> str:
+    """쇼츠/롱폼 판별. 재생목록 정보가 있으면 그걸 믿고, 없으면 길이로 추정한다."""
+    if duration > SHORTS_MAX_SECONDS:
+        return "long"          # 3분 초과는 쇼츠일 수 없다
+    if shorts_ids is not None:
+        return "shorts" if video_id in shorts_ids else "long"
+    return "shorts" if duration <= 60 else "long"

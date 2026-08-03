@@ -1,6 +1,24 @@
 import pytest
 
-from src.youtube import clean_channel_text, parse_channel_ref, parse_duration
+from src.youtube import (clean_channel_text, guess_format, parse_channel_ref,
+                         parse_duration)
+
+
+def test_guess_format_uses_shorts_playlist_when_available():
+    shorts = {"a", "b"}
+    assert guess_format(30, shorts, "a") == "shorts"
+    assert guess_format(30, shorts, "zzz") == "long"   # 짧아도 목록에 없으면 롱폼
+    assert guess_format(150, shorts, "b") == "shorts"  # 60초 초과 쇼츠도 잡는다
+
+
+def test_guess_format_never_calls_long_video_a_short():
+    assert guess_format(600, {"a"}, "a") == "long"     # 3분 초과는 쇼츠일 수 없다
+
+
+def test_guess_format_falls_back_to_duration_without_playlist():
+    assert guess_format(30, None, "a") == "shorts"
+    assert guess_format(90, None, "a") == "long"
+    assert guess_format(600, None, "a") == "long"
 
 
 def test_parse_duration():

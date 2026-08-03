@@ -27,7 +27,7 @@ class FakeYouTube:
     """채널 2개 — 하나는 정상, 하나는 채널을 못 찾는 상황."""
 
     def __init__(self):
-        self.short_checks = 0
+        self.shorts_lookups = 0
 
     def resolve_channel_flexible(self, address):
         if "없는채널" in address:
@@ -61,9 +61,11 @@ class FakeYouTube:
             })
         return out
 
-    def is_short(self, video_id, duration):
-        self.short_checks += 1
-        return duration <= 60
+    def get_shorts_video_ids(self, channel_id):
+        """채널당 한 번만 호출되어야 한다."""
+        self.shorts_lookups += 1
+        handle = channel_id.replace("UC_", "")
+        return {f"{handle}{i}" for i in range(12) if i % 2 == 0}
 
 
 class FakeNotion:
@@ -185,12 +187,18 @@ def test_pipeline_renders_dashboard(tmp_path):
     assert "분석 대기" in html            # 큐에 연결된 노션 링크
 
 
-def test_shorts_detection_runs_once_per_video(tmp_path):
-    """쇼츠 판별은 비싸므로 새 영상에 대해서만 1회 수행해야 한다."""
+def test_shorts_detection_is_one_lookup_per_channel(tmp_path):
+    """영상 편수와 무관하게 채널당 한 번만 조회해야 한다.
+
+    영상마다 요청을 보내면 3년치 수집에서 수천 건이 되어 사실상 멈춘다.
+    """
     yt, nt = FakeYouTube(), FakeNotion()
-    collect_all(yt, nt, CONFIG, tmp_path, NOW)
-    first_pass = yt.short_checks
-    assert first_pass == 24               # 채널 2개 × 12편
+    accounts = collect_all(yt, nt, CONFIG, tmp_path, NOW)
+    assert yt.shorts_lookups == 2          # 성공한 채널 2개 (영상은 24편)
+
+    # 판별 결과가 실제로 반영됐는지
+    videos = accounts[0]["videos"]
+    assert {v["format"] for v in videos} == {"shorts", "long"}
 
     collect_all(yt, nt, CONFIG, tmp_path, NOW)
-    assert yt.short_checks == first_pass   # 두 번째 수집에서는 추가 확인 없음
+    assert yt.shorts_lookups == 2          # 두 번째 수집에서는 추가 조회 없음
