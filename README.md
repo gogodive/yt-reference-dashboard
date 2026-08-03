@@ -128,6 +128,13 @@ Claude Code에서:
 brew install yt-dlp ffmpeg
 ```
 
+접속 암호를 키체인에 한 번 넣어 둡니다. 분석할 때마다 암호를 묻지 않게 하기 위한 것으로,
+`DASHBOARD_PASSWORD` 와 같은 값을 입력하면 됩니다.
+
+```bash
+security add-generic-password -a "$USER" -s yt-reference-dashboard -w
+```
+
 ---
 
 ## 로컬에서 직접 돌려보기

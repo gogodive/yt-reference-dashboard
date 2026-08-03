@@ -106,6 +106,31 @@ def test_render_html_produces_full_page():
     assert "grade g-best" in html
 
 
+def test_default_sort_is_newest_first():
+    acc = account()
+    metrics.annotate_all([acc], CONFIG)
+    html = render.render_html([acc], [], NOW, CONFIG)
+
+    assert '<th class="sortable sorted" data-key="date">' in html
+    assert '<th class="sortable" data-key="ratio">' in html   # 배수 열은 기본 정렬 아님
+    assert 'const state = { key: "date", dir: "desc"' in html
+
+
+def test_hit_badge_is_in_the_ratio_column_not_the_title():
+    """제목에는 배수를 중복 표시하지 않고, 강조는 성과 배수 열에 둔다."""
+    acc = account()
+    metrics.annotate_all([acc], CONFIG)
+    html = render.render_html([acc], [], NOW, CONFIG)
+
+    # 히트 영상의 제목 링크 안에 뱃지가 없어야 한다
+    start = html.index('class="title-cell"')
+    title_cell = html[start:html.index("</td>", start)]
+    assert "hotbadge" not in title_cell
+
+    # 대신 성과 배수 셀에 뱃지가 있어야 한다
+    assert '<td class="num"><span class="hotbadge">🔥 5.0x</span></td>' in html
+
+
 def test_render_html_escapes_titles():
     acc = account()
     acc["videos"][0]["title"] = '<script>alert("x")</script>'

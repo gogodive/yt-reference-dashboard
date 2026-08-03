@@ -87,7 +87,7 @@
                      background:#eef; color:#446; margin-right:4px; vertical-align:1px; }
   .title-cell .fmt.shorts { background:#fff0e6; color:#a04000; }
   .hotbadge { display:inline-block; background:var(--hot); color:#fff; font-size:11px;
-              font-weight:700; padding:2px 7px; border-radius:10px; margin-left:4px; }
+              font-weight:700; padding:2px 7px; border-radius:10px; white-space:nowrap; }
   .num { font-variant-numeric:tabular-nums; }
 
   .grade { display:inline-flex; flex-direction:column; align-items:center; gap:2px; }
@@ -151,11 +151,11 @@
   </td>
   <td class="title-cell">
     <a href="{{ v.url }}" target="_blank" rel="noopener">
-      <span class="fmt {{ 'shorts' if v.format == 'shorts' else '' }}">{{ '쇼츠' if v.format == 'shorts' else '롱폼' }}</span>{{ v.title }}{% if v._is_hit %}<span class="hotbadge">🔥 {{ v._perf_ratio | ratio }}</span>{% endif %}
+      <span class="fmt {{ 'shorts' if v.format == 'shorts' else '' }}">{{ '쇼츠' if v.format == 'shorts' else '롱폼' }}</span>{{ v.title }}
     </a>
   </td>
   <td class="num">{{ v.metrics.views | num }}</td>
-  <td class="num">{{ v._perf_ratio | ratio }}</td>
+  <td class="num">{% if v._is_hit %}<span class="hotbadge">🔥 {{ v._perf_ratio | ratio }}</span>{% else %}{{ v._perf_ratio | ratio }}{% endif %}</td>
   <td>{{ grade_cell(v._perf_grade, v._perf_rank) }}</td>
   <td>{{ grade_cell(v._contribution_grade, v._contrib_rank) }}</td>
   <td class="num">{{ v._engagement | pct }}</td>
@@ -240,11 +240,11 @@
             <th>썸네일</th>
             <th style="text-align:left">제목</th>
             <th class="sortable" data-key="views">조회수<span class="arrow">▾</span></th>
-            <th class="sortable sorted" data-key="ratio">성과 배수<span class="arrow">▾</span></th>
+            <th class="sortable" data-key="ratio">성과 배수<span class="arrow">▾</span></th>
             <th class="sortable" data-key="perf">성과도<span class="arrow">▾</span></th>
             <th class="sortable" data-key="contrib">기여도<span class="arrow">▾</span></th>
             <th class="sortable" data-key="eng">참여율<span class="arrow">▾</span></th>
-            <th class="sortable" data-key="date">게시일<span class="arrow">▾</span></th>
+            <th class="sortable sorted" data-key="date">게시일<span class="arrow">▾</span></th>
             <th>분석</th>
           </tr>
         </thead>
@@ -276,7 +276,7 @@ document.querySelectorAll("section").forEach(section => {
   if (!table) return;
   const tbody = table.querySelector("tbody");
   const countEl = section.querySelector(".count");
-  const state = { key: "ratio", dir: "desc", fmt: "all", hit: "all" };
+  const state = { key: "date", dir: "desc", fmt: "all", hit: "all" };
 
   function apply() {
     const rows = [...tbody.querySelectorAll("tr")];
