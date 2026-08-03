@@ -1,0 +1,23 @@
+notion:
+  # ⭐ 레퍼런스 유튜브 채널 — 사용자가 채널 주소를 적고 모니터링을 체크하는 곳
+  channel_database_id: "3b139eba97ed8000bcfcf1ff844365c3"
+  # 🎯 성과 좋은 영상 분석 — 히트 영상의 분석 결과가 쌓이는 곳
+  analysis_database_id: "e30243b071c74022931a49e4c9d6b4df"
+
+collect:
+  years: 3           # 최근 몇 년치를 수집할지
+  max_videos: 1000   # 채널당 안전 상한
+  freeze_days: 30    # 게시 후 이 기간까지만 지표를 갱신, 이후 동결
+
+metrics:
+  hot_ratio: 3.0     # 같은 채널·같은 포맷 중앙값 대비 이 배수 이상이면 히트
+  min_videos: 5      # 포맷별 표본이 이보다 적으면 등급/히트를 판정하지 않음
+  # 기여도(조회수/구독자) 등급 경계 — 전체 모니터링 채널 통합 분위수
+  contribution_quantiles:
+    best: 0.90
+    good: 0.70
+    normal: 0.40
+
+dashboard:
+  chart_years: 3
+  title: "레퍼런스 유튜브 채널 분석"

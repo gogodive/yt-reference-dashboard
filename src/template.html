@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<style>
+  :root { --line:#e5e5e5; --sub:#737373; --bg:#f7f8fa; --best:#00a35c; --good:#2962ff;
+          --normal:#9e9e9e; --worst:#e53935; --hot:#ff5722; }
+  * { box-sizing:border-box; margin:0; }
+  body { font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+         background:var(--bg); color:#111; }
+  a { color:inherit; }
+  header { background:#fff; border-bottom:1px solid var(--line); padding:14px 16px; }
+  header h1 { font-size:17px; }
+  header .updated { color:var(--sub); font-size:12px; margin-top:4px; display:block; }
+  header .rule { margin-top:8px; font-size:12px; color:#5b5b5b; background:#fff7ed;
+                 border:1px solid #fed7aa; border-radius:6px; padding:8px 10px; line-height:1.6; }
+  nav { background:#fff; border-bottom:1px solid var(--line); display:flex;
+        overflow-x:auto; position:sticky; top:0; z-index:10; }
+  nav button { flex:1; min-width:120px; padding:12px 8px; border:0; background:none;
+               font-size:14px; cursor:pointer; border-bottom:2px solid transparent;
+               color:var(--sub); white-space:nowrap; }
+  nav button.active { color:#111; font-weight:600; border-bottom-color:#111; }
+  .wrap { max-width:1180px; margin:0 auto; padding:16px 16px 48px; }
+  section { display:none; } section.active { display:block; }
+
+  .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:16px; }
+  .stat { background:#fff; border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .stat .k { font-size:12px; color:var(--sub); }
+  .stat .v { font-size:19px; font-weight:700; margin-top:4px; }
+  .stat .v small { font-size:12px; font-weight:400; color:var(--sub); margin-left:4px; }
+  .chan-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+  .chan-head h2 { font-size:18px; }
+  .chan-head a { font-size:12px; color:var(--sub); }
+  .stale { background:#fff8e1; border:1px solid #ffe082; border-radius:6px;
+           margin-bottom:12px; padding:8px 12px; font-size:12px; color:#8d6e00; }
+
+  .panel { background:#fff; border:1px solid var(--line); border-radius:10px;
+           padding:14px 16px; margin-bottom:16px; }
+  .panel h3 { font-size:14px; margin-bottom:2px; }
+  .panel .hint { color:var(--sub); font-size:12px; }
+  .chart-sub { font-size:13px; font-weight:600; margin:12px 0 2px; }
+  .chart-sub .legend { float:right; font-weight:400; font-size:12px; color:#404040; }
+  .chart-sub .legend i { display:inline-block; width:9px; height:9px; border-radius:50%;
+                         margin:0 4px 0 12px; vertical-align:-1px; }
+  .chart svg { width:100%; height:auto; display:block; }
+  .chart-tip { position:fixed; pointer-events:none; background:#111; color:#fff;
+               font-size:12px; padding:8px 10px; border-radius:6px; max-width:280px;
+               line-height:1.5; display:none; z-index:30; }
+  .chart-tip .tv { color:#bdbdbd; }
+  .toggle { display:inline-flex; border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+  .toggle button { border:0; background:#fff; padding:5px 12px; font-size:12px;
+                   cursor:pointer; color:var(--sub); }
+  .toggle button.on { background:#111; color:#fff; }
+
+  .filters { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+  .filters .count { color:var(--sub); font-size:12px; margin-left:auto; }
+
+  .tablewrap { background:#fff; border:1px solid var(--line); border-radius:10px;
+               overflow:auto; max-height:74vh; }
+  table { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; min-width:880px; }
+  thead th { position:sticky; top:0; z-index:2; background:#fafafa;
+             box-shadow:inset 0 -1px 0 var(--line);
+             padding:10px 8px; font-size:12px; color:#555; font-weight:600;
+             white-space:nowrap; text-align:center; }
+  thead th.sortable { cursor:pointer; user-select:none; }
+  thead th.sortable:hover { background:#f0f0f0; }
+  thead th .arrow { color:#bbb; font-size:10px; margin-left:2px; }
+  thead th.sorted .arrow { color:#111; }
+  tbody td { border-bottom:1px solid #f0f0f0; padding:8px; vertical-align:middle;
+             text-align:center; }
+  tbody tr.hit { background:#fff8f4; }
+  tbody tr:hover { background:#f5f7ff; }
+  td.thumb-cell { width:132px; }
+  .thumb { position:relative; display:block; width:120px; aspect-ratio:16/9;
+           background:#eee; border-radius:6px; overflow:hidden; }
+  .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+  .thumb .dur { position:absolute; bottom:4px; right:4px; background:rgba(0,0,0,.8);
+                color:#fff; font-size:10px; padding:1px 4px; border-radius:3px; }
+  td.title-cell { text-align:left; max-width:340px; }
+  .title-cell a { text-decoration:none; display:block; line-height:1.4;
+                  overflow:hidden; display:-webkit-box; -webkit-line-clamp:2;
+                  -webkit-box-orient:vertical; }
+  .title-cell .fmt { display:inline-block; font-size:10px; padding:1px 6px; border-radius:8px;
+                     background:#eef; color:#446; margin-right:4px; vertical-align:1px; }
+  .title-cell .fmt.shorts { background:#fff0e6; color:#a04000; }
+  .hotbadge { display:inline-block; background:var(--hot); color:#fff; font-size:11px;
+              font-weight:700; padding:2px 7px; border-radius:10px; margin-left:4px; }
+  .num { font-variant-numeric:tabular-nums; }
+
+  .grade { display:inline-flex; flex-direction:column; align-items:center; gap:2px; }
+  .grade .dots { display:flex; gap:2px; }
+  .grade i { width:5px; height:5px; border-radius:50%; background:#e0e0e0; display:block; }
+  .grade em { font-style:normal; font-size:11px; font-weight:700; }
+  .grade.g-best i.on, .grade.g-best em { background:none; }
+  .grade.g-best i.on { background:var(--best); } .grade.g-best em { color:var(--best); }
+  .grade.g-good i.on { background:var(--good); } .grade.g-good em { color:var(--good); }
+  .grade.g-normal i.on { background:var(--normal); } .grade.g-normal em { color:var(--normal); }
+  .grade.g-worst i.on { background:var(--worst); } .grade.g-worst em { color:var(--worst); }
+  .grade.none { color:#ccc; font-size:12px; }
+
+  .an { font-size:11px; padding:3px 8px; border-radius:10px; white-space:nowrap;
+        text-decoration:none; display:inline-block; }
+  .an.done { background:#e8f5e9; color:#1b5e20; }
+  .an.pending { background:#fff8e1; color:#8d6e00; }
+  .an.none { color:#ccc; }
+  .empty { text-align:center; color:var(--sub); padding:40px 0; }
+
+  @media (max-width:820px){
+    .stats { grid-template-columns:repeat(2,1fr); }
+    .wrap { padding:12px 10px 40px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>{{ title }}</h1>
+  <span class="updated">마지막 갱신: {{ generated_label }} · 매일 07:10 자동 갱신 · 최근 3년치 수집</span>
+  <div class="rule">
+    <b>성과도</b> = 같은 채널·같은 포맷(롱폼/쇼츠) 조회수 중앙값 대비 배수. 구독자 기반 노출을 얼마나 넘어섰는지.
+    <b>{{ hot_ratio }}배 이상이면 🔥 히트</b>로 판정해 심층 분석 대상이 됩니다.<br>
+    <b>기여도</b> = 조회수 ÷ 구독자 수. 채널 밖으로 얼마나 퍼졌는지(성장 잠재력)를 전체 채널 통합 기준으로 등급화합니다.
+  </div>
+</header>
+
+<nav>
+  {% for acc in accounts %}
+  <button data-tab="{{ loop.index0 }}"{% if loop.first %} class="active"{% endif %}>{{ acc.brand or acc.title }}</button>
+  {% endfor %}
+</nav>
+
+{% macro grade_cell(g, rank) -%}
+{%- if g -%}
+<span class="grade g-{{ g|lower }}"><span class="dots">{% for i in range(4) %}<i{% if i <= rank %} class="on"{% endif %}></i>{% endfor %}</span><em>{{ g }}</em></span>
+{%- else -%}<span class="grade none">–</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro video_row(v) -%}
+<tr class="{% if v._is_hit %}hit{% endif %}"
+    data-fmt="{{ v.format }}" data-hit="{{ 1 if v._is_hit else 0 }}"
+    data-views="{{ v.metrics.views or 0 }}" data-ratio="{{ v._perf_ratio or 0 }}"
+    data-perf="{{ v._perf_rank }}" data-contrib="{{ v._contrib_rank }}"
+    data-eng="{{ v._engagement or 0 }}" data-date="{{ v.published_at[:10] }}">
+  <td class="thumb-cell">
+    <a class="thumb" href="{{ v.url }}" target="_blank" rel="noopener">
+      <img src="{{ v.thumbnail }}" alt="" loading="lazy">
+      {% if v.duration %}<span class="dur">{{ v.duration | dur }}</span>{% endif %}
+    </a>
+  </td>
+  <td class="title-cell">
+    <a href="{{ v.url }}" target="_blank" rel="noopener">
+      <span class="fmt {{ 'shorts' if v.format == 'shorts' else '' }}">{{ '쇼츠' if v.format == 'shorts' else '롱폼' }}</span>{{ v.title }}{% if v._is_hit %}<span class="hotbadge">🔥 {{ v._perf_ratio | ratio }}</span>{% endif %}
+    </a>
+  </td>
+  <td class="num">{{ v.metrics.views | num }}</td>
+  <td class="num">{{ v._perf_ratio | ratio }}</td>
+  <td>{{ grade_cell(v._perf_grade, v._perf_rank) }}</td>
+  <td>{{ grade_cell(v._contribution_grade, v._contrib_rank) }}</td>
+  <td class="num">{{ v._engagement | pct }}</td>
+  <td class="num">{{ v.published_at | date }}</td>
+  <td>
+    {%- if v._notion_url and v._analysis_status == 'done' -%}
+      <a class="an done" href="{{ v._notion_url }}" target="_blank" rel="noopener">분석 보기</a>
+    {%- elif v._notion_url -%}
+      <a class="an pending" href="{{ v._notion_url }}" target="_blank" rel="noopener">분석 대기</a>
+    {%- else -%}<span class="an none">–</span>{%- endif -%}
+  </td>
+</tr>
+{%- endmacro %}
+
+{% for acc in accounts %}
+<section id="tab-{{ loop.index0 }}"{% if loop.first %} class="active"{% endif %}>
+  <div class="wrap">
+    <div class="chan-head">
+      <h2>{{ acc.title or acc.brand }}</h2>
+      {% if acc.url %}<a href="{{ acc.url }}" target="_blank" rel="noopener">{{ acc.url }}</a>{% endif %}
+    </div>
+
+    {% if acc._stale_date %}
+    <div class="stale">⚠️ 이 채널은 {{ acc._stale_date }} 데이터입니다 (최근 수집 실패 — 노션의 채널 주소를 확인해 주세요)</div>
+    {% endif %}
+
+    <div class="stats">
+      <div class="stat"><div class="k">구독자</div><div class="v">{{ acc.subscribers | compact }}</div></div>
+      <div class="stat"><div class="k">채널 전체 영상</div><div class="v">{{ acc.video_count | num }}</div></div>
+      <div class="stat"><div class="k">누적 조회수</div><div class="v">{{ acc.total_views | compact }}</div></div>
+      <div class="stat"><div class="k">채널 개설</div>
+        <div class="v">{% if acc._channel_age_days %}{{ acc._channel_age_days | num }}<small>일 경과</small>{% else %}–{% endif %}</div></div>
+      <div class="stat"><div class="k">수집 영상 (3년)</div>
+        <div class="v">{{ acc.videos | length }}<small>롱폼 {{ acc._long | length }} · 쇼츠 {{ acc._shorts | length }}</small></div></div>
+      <div class="stat"><div class="k">수집분 평균 조회수</div><div class="v">{{ acc._avg_views | compact }}</div></div>
+      <div class="stat"><div class="k">최근 30일 업로드</div><div class="v">{{ acc._recent_uploads }}<small>편</small></div></div>
+      <div class="stat"><div class="k">🔥 히트 영상</div>
+        <div class="v" style="color:var(--hot)">{{ acc._hits | length }}<small>편</small></div></div>
+    </div>
+
+    {% if acc._chart %}
+    <div class="panel">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div>
+          <h3>조회수 추이 (최근 3년)</h3>
+          <span class="hint">점 하나 = 영상 1개 · 점에 마우스를 올리면 제목이 보입니다</span>
+        </div>
+        <div class="toggle" style="margin-left:auto">
+          <button data-scale="lin" data-acc="{{ loop.index0 }}" class="on">선형 축</button>
+          <button data-scale="log" data-acc="{{ loop.index0 }}">로그 축</button>
+        </div>
+      </div>
+      <div class="chart-sub">롱폼
+        <span class="legend"><i style="background:#2962ff"></i>일반<i style="background:#ff5722"></i>🔥 히트</span>
+      </div>
+      <div class="chart" data-acc="{{ loop.index0 }}" data-fmt="long"></div>
+      <div class="chart-sub">쇼츠
+        <span class="legend"><i style="background:#2962ff"></i>일반<i style="background:#ff5722"></i>🔥 히트</span>
+      </div>
+      <div class="chart" data-acc="{{ loop.index0 }}" data-fmt="shorts"></div>
+      <script type="application/json" id="chart-data-{{ loop.index0 }}">{{ acc._chart | tojson }}</script>
+    </div>
+    {% endif %}
+
+    <div class="filters">
+      <div class="toggle" data-role="fmt">
+        <button data-fmt="all" class="on">전체</button>
+        <button data-fmt="long">롱폼</button>
+        <button data-fmt="shorts">쇼츠</button>
+      </div>
+      <div class="toggle" data-role="hit">
+        <button data-hit="all" class="on">모든 영상</button>
+        <button data-hit="1">🔥 히트만</button>
+      </div>
+      <span class="count"></span>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr>
+            <th>썸네일</th>
+            <th style="text-align:left">제목</th>
+            <th class="sortable" data-key="views">조회수<span class="arrow">▾</span></th>
+            <th class="sortable sorted" data-key="ratio">성과 배수<span class="arrow">▾</span></th>
+            <th class="sortable" data-key="perf">성과도<span class="arrow">▾</span></th>
+            <th class="sortable" data-key="contrib">기여도<span class="arrow">▾</span></th>
+            <th class="sortable" data-key="eng">참여율<span class="arrow">▾</span></th>
+            <th class="sortable" data-key="date">게시일<span class="arrow">▾</span></th>
+            <th>분석</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for v in acc.videos %}{{ video_row(v) }}{% endfor %}
+        </tbody>
+      </table>
+      {% if not acc.videos %}<div class="empty">수집된 영상이 없습니다</div>{% endif %}
+    </div>
+  </div>
+</section>
+{% endfor %}
+
+<div class="chart-tip" id="chart-tip"></div>
+<script>
+// ── 채널 탭 ──────────────────────────────────────────────────────────
+document.querySelectorAll("nav button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("nav button").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll("section").forEach(s => s.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
+  });
+});
+
+// ── 테이블 정렬 + 필터 ────────────────────────────────────────────────
+document.querySelectorAll("section").forEach(section => {
+  const table = section.querySelector("table");
+  if (!table) return;
+  const tbody = table.querySelector("tbody");
+  const countEl = section.querySelector(".count");
+  const state = { key: "ratio", dir: "desc", fmt: "all", hit: "all" };
+
+  function apply() {
+    const rows = [...tbody.querySelectorAll("tr")];
+    rows.sort((a, b) => {
+      const av = a.dataset[state.key], bv = b.dataset[state.key];
+      const an = parseFloat(av), bn = parseFloat(bv);
+      const cmp = (!isNaN(an) && !isNaN(bn)) ? an - bn : String(av).localeCompare(String(bv));
+      return state.dir === "asc" ? cmp : -cmp;
+    });
+    rows.forEach(r => tbody.appendChild(r));
+
+    let shown = 0;
+    rows.forEach(r => {
+      const okFmt = state.fmt === "all"
+        || (state.fmt === "shorts" ? r.dataset.fmt === "shorts" : r.dataset.fmt !== "shorts");
+      const okHit = state.hit === "all" || r.dataset.hit === "1";
+      const visible = okFmt && okHit;
+      r.style.display = visible ? "" : "none";
+      if (visible) shown++;
+    });
+    countEl.textContent = shown + "편 표시";
+
+    table.querySelectorAll("th.sortable").forEach(th => {
+      const on = th.dataset.key === state.key;
+      th.classList.toggle("sorted", on);
+      th.querySelector(".arrow").textContent = on && state.dir === "asc" ? "▴" : "▾";
+    });
+  }
+
+  table.querySelectorAll("th.sortable").forEach(th => {
+    th.addEventListener("click", () => {
+      if (state.key === th.dataset.key) {
+        state.dir = state.dir === "desc" ? "asc" : "desc";
+      } else {
+        state.key = th.dataset.key;
+        state.dir = "desc";
+      }
+      apply();
+    });
+  });
+
+  section.querySelectorAll('.toggle[data-role="fmt"] button').forEach(btn => {
+    btn.addEventListener("click", () => {
+      state.fmt = btn.dataset.fmt;
+      btn.parentElement.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === btn));
+      apply();
+    });
+  });
+  section.querySelectorAll('.toggle[data-role="hit"] button').forEach(btn => {
+    btn.addEventListener("click", () => {
+      state.hit = btn.dataset.hit;
+      btn.parentElement.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === btn));
+      apply();
+    });
+  });
+
+  apply();
+});
+
+// ── 조회수 추이 산점도 ────────────────────────────────────────────────
+(function () {
+  const W = 1200, H = 230, M = { t: 12, r: 16, b: 30, l: 56 };
+  const scales = {};
+  const fmtNum = n => n >= 1e8 ? (n / 1e8) + "억" : n >= 1e4 ? (+(n / 1e4).toFixed(1)) + "만"
+    : n >= 1e3 ? (+(n / 1e3).toFixed(1)) + "천" : "" + n;
+
+  function ticksLog(min, max) {
+    const out = [];
+    for (let e = 1; e <= 9; e++) for (const m of [1, 3]) {
+      const v = m * 10 ** e;
+      if (v >= min * 0.9 && v <= max * 1.15) out.push(v);
+    }
+    return out;
+  }
+  function ticksLin(max) {
+    const base = Math.pow(10, Math.floor(Math.log10(max / 4)));
+    const step = [1, 2, 5, 10].map(x => x * base).find(x => max / x <= 5) || base;
+    const out = [];
+    for (let v = step; v <= max * 1.02; v += step) out.push(v);
+    return out;
+  }
+  function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+
+  function draw(el, pts, scale) {
+    if (!pts.length) {
+      el.innerHTML = '<div style="color:#737373;font-size:12px;padding:12px 0">데이터 없음</div>';
+      return;
+    }
+    const dates = pts.map(p => +new Date(p.d)), views = pts.map(p => p.v);
+    const x0 = Math.min(...dates), x1 = Math.max(...dates);
+    const vMax = Math.max(...views), vMin = Math.min(...views);
+    const X = t => x1 === x0 ? (M.l + W - M.r) / 2
+      : M.l + (+new Date(t) - x0) / (x1 - x0) * (W - M.l - M.r);
+    const Y = scale === "log"
+      ? v => H - M.b - (Math.log10(v) - Math.log10(vMin * 0.9)) /
+             (Math.log10(vMax * 1.15) - Math.log10(vMin * 0.9) || 1) * (H - M.t - M.b)
+      : v => H - M.b - (v / (vMax * 1.05)) * (H - M.t - M.b);
+    const yt = scale === "log" ? ticksLog(vMin, vMax) : ticksLin(vMax);
+    let s = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+    if (scale !== "log")
+      s += `<text x="${M.l - 8}" y="${H - M.b + 4}" text-anchor="end" font-size="11" fill="#737373">0</text>`;
+    for (const v of yt) {
+      const y = Y(v);
+      if (y < M.t) continue;
+      s += `<line x1="${M.l}" y1="${y}" x2="${W - M.r}" y2="${y}" stroke="#eee"/>` +
+           `<text x="${M.l - 8}" y="${y + 4}" text-anchor="end" font-size="11" fill="#737373">${fmtNum(v)}</text>`;
+    }
+    const d0 = new Date(x0);
+    let tick = new Date(d0.getFullYear(), Math.ceil(d0.getMonth() / 3) * 3, 1);
+    while (+tick <= x1) {
+      const x = X(tick);
+      s += `<line x1="${x}" y1="${H - M.b}" x2="${x}" y2="${H - M.b + 4}" stroke="#bdbdbd"/>` +
+           `<text x="${x}" y="${H - M.b + 18}" text-anchor="middle" font-size="11" fill="#737373">` +
+           `${tick.getFullYear().toString().slice(2)}.${String(tick.getMonth() + 1).padStart(2, "0")}</text>`;
+      tick = new Date(tick.getFullYear(), tick.getMonth() + 3, 1);
+    }
+    s += `<line x1="${M.l}" y1="${H - M.b}" x2="${W - M.r}" y2="${H - M.b}" stroke="#bdbdbd"/>`;
+    for (const p of pts) {
+      s += `<circle cx="${X(p.d)}" cy="${Y(p.v)}" r="5" fill="${p.h ? "#ff5722" : "#2962ff"}"` +
+           ` fill-opacity="0.85" stroke="#fff" stroke-width="1.5"` +
+           ` data-t="${esc(p.t)}" data-d="${p.d}" data-v="${p.v}" data-h="${p.h ? 1 : 0}"/>`;
+    }
+    el.innerHTML = s + "</svg>";
+  }
+
+  function drawAcc(i) {
+    const data = JSON.parse(document.getElementById("chart-data-" + i).textContent);
+    document.querySelectorAll(`.chart[data-acc="${i}"]`).forEach(el => {
+      const fmt = el.dataset.fmt;
+      draw(el, data.filter(p => fmt === "shorts" ? p.f === "shorts" : p.f !== "shorts"),
+           scales[i] || "lin");
+    });
+  }
+
+  document.querySelectorAll(".toggle button[data-scale]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const i = btn.dataset.acc;
+      scales[i] = btn.dataset.scale;
+      btn.parentElement.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === btn));
+      drawAcc(i);
+    });
+  });
+
+  document.querySelectorAll("script[id^='chart-data-']").forEach(sc =>
+    drawAcc(sc.id.replace("chart-data-", "")));
+
+  const tip = document.getElementById("chart-tip");
+  document.addEventListener("mousemove", e => {
+    const c = e.target.closest && e.target.closest(".chart circle");
+    if (c) {
+      tip.style.display = "block";
+      tip.innerHTML = (c.dataset.h === "1" ? "🔥 " : "") + esc(c.dataset.t) +
+        '<br><span class="tv">' + c.dataset.d + " · 조회수 " +
+        Number(c.dataset.v).toLocaleString() + "</span>";
+      tip.style.left = Math.min(e.clientX + 14, innerWidth - 300) + "px";
+      tip.style.top = (e.clientY + 14) + "px";
+    } else tip.style.display = "none";
+  });
+})();
+</script>
+</body>
+</html>
