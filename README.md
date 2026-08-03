@@ -36,6 +36,21 @@
 
 ---
 
+## 접속 암호 (중요)
+
+대시보드와 수집 데이터는 **AES-GCM 256 + PBKDF2-SHA256 60만 회**로 암호화됩니다.
+`sales-dashboard` 와 같은 방식이라, 저장소가 public 이어도 암호를 모르면 아무것도 읽을 수 없습니다.
+
+| 무엇이 | 어떻게 |
+|---|---|
+| 대시보드 (`site/index.html`) | 페이지 전체가 암호문. 접속 암호를 넣어야 복호화되어 열린다 |
+| 수집 원본 (`data/*.json`) | 저장소에 **평문으로 커밋되지 않는다.** 암호화된 `data/state.enc` 하나만 올라간다 |
+| 모니터링 채널 목록 | 노션에만 있다. 저장소에는 없다 |
+
+암호는 GitHub Secret `DASHBOARD_PASSWORD` 하나로 관리합니다. **이 값을 잃어버리면
+지금까지 쌓인 수집 데이터를 복호화할 수 없습니다** (동결된 과거 지표가 날아갑니다).
+노션 허브 페이지에 적어 두세요.
+
 ## 지표 읽는 법
 
 | 지표 | 뜻 | 계산 |
@@ -87,9 +102,10 @@ Claude Code에서:
 
 ### 3. GitHub
 1. `yt-reference-dashboard` 라는 이름으로 **public** 저장소를 만들고 이 폴더를 push
-2. Settings → Secrets and variables → Actions → 두 개 등록
+2. Settings → Secrets and variables → Actions → 세 개 등록
    - `YOUTUBE_API_KEY`
    - `NOTION_TOKEN`
+   - `DASHBOARD_PASSWORD` — 대시보드 접속 암호 (직접 정하세요. 잃어버리면 복구 불가)
 3. Settings → Pages → Source: **GitHub Actions**
 4. Actions 탭 → daily-feed → **Run workflow** 로 첫 실행
 5. 배포된 주소를 노션 허브 페이지 맨 위에 링크로 걸어 둔다
@@ -110,9 +126,10 @@ pip install -r requirements.txt
 
 export YOUTUBE_API_KEY="..."
 export NOTION_TOKEN="ntn_..."
+export DASHBOARD_PASSWORD="..."
 python -m src.main
 
-open site/index.html
+open site/index.html   # 암호를 입력해야 열립니다
 ```
 
 테스트:
@@ -135,9 +152,12 @@ yt-reference-dashboard/
 │   ├── merge.py         # 30일 동결 규칙
 │   ├── metrics.py       # 조회수 / 기여도 / 성과도 / 히트 판정
 │   ├── hitqueue.py      # 분석 큐 (중단·재개 안전)
+│   ├── secure.py        # AES-GCM 암호화 (대시보드 + 수집 데이터)
 │   ├── render.py        # 대시보드 렌더
 │   └── template.html
-├── data/                # 채널별 수집 결과 + hit_queue.json (git에 커밋됨)
+├── data/
+│   ├── state.enc        # 암호화된 수집 결과 — 이것만 커밋된다
+│   └── *.json           # 복호화된 작업본 (gitignore)
 └── tests/
 ```
 
@@ -156,3 +176,5 @@ yt-reference-dashboard/
 | 히트가 너무 많음 | `config.yaml` 의 `metrics.hot_ratio` 를 4~5로 올린다 |
 | 영상 다운로드 실패 | 연령제한·지역제한·비공개 영상일 수 있다. 큐에서 `failed` 로 표시되고 넘어간다 |
 | `work/` 폴더가 커짐 | 분석이 끝난 영상 폴더는 지워도 된다. `rm -rf work/*` |
+| 대시보드가 암호를 안 받음 | 브라우저 캐시 문제일 수 있다. 새로고침 후 다시 입력 (암호는 세션당 1회만 물어본다) |
+| 암호를 바꾸고 싶음 | GitHub Secret 을 바꾸기 전에 **기존 암호로 한 번 돌려 `state.enc` 를 복호화**해야 한다. 그냥 바꾸면 과거 데이터를 못 읽는다 |

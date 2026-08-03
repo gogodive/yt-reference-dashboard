@@ -14,7 +14,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from src import hitqueue, metrics
+from src import hitqueue, metrics, secure
 from src.collect import collect_all, load_config
 from src.notion import NotionClient, analysis_row_payload
 from src.render import render_html
@@ -71,10 +71,20 @@ def main() -> int:
     if not os.environ.get("NOTION_TOKEN"):
         print("NOTION_TOKEN 환경변수가 없습니다", file=sys.stderr)
         return 1
+    try:
+        password = secure.require_password()
+    except secure.MissingPassword as exc:
+        print(exc, file=sys.stderr)
+        return 1
 
     config = load_config(ROOT / "config.yaml")
     data_dir = ROOT / "data"
     now = datetime.now(KST)
+
+    # 저장소에는 암호화된 state.enc 만 있으므로 먼저 풀어 놓는다
+    restored = secure.load_state(data_dir, password)
+    if restored:
+        log.info("이전 수집 데이터 %d개 복원", restored)
 
     client = YouTubeClient(api_key)
     notion_client = NotionClient()
@@ -94,10 +104,15 @@ def main() -> int:
                                added, entries, accounts)
     hitqueue.save(queue_path, entries)
 
+    # 수집 원본은 암호화해서 한 덩어리로만 커밋한다 (public 저장소 노출 방지)
+    secure.save_state(data_dir, password)
+
     site = ROOT / "site"
     site.mkdir(exist_ok=True)
-    (site / "index.html").write_text(render_html(accounts, entries, now, config),
-                                     encoding="utf-8")
+    dashboard = render_html(accounts, entries, now, config)
+    title = config.get("dashboard", {}).get("title", "레퍼런스 유튜브 채널 분석")
+    (site / "index.html").write_text(
+        secure.build_gate_html(dashboard, password, title), encoding="utf-8")
 
     stats = hitqueue.counts(entries)
     print(f"완료: 채널 {len(accounts)}개 · 히트 {len(hits)}편 "
