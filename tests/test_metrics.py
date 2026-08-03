@@ -100,6 +100,38 @@ def test_contribution_ties_get_the_generous_grade():
     assert {v["_contribution_grade"] for v in acc["videos"]} == {BEST}
 
 
+def test_contribution_is_graded_within_each_format():
+    """쇼츠가 상위 등급을 독식하면 등급이 성과가 아니라 포맷을 말하게 된다.
+
+    쇼츠는 구독자 대비 도달이 롱폼보다 구조적으로 훨씬 크다.
+    섞어서 순위를 매기면 롱폼은 아무리 잘돼도 상위 등급에 못 든다.
+    """
+    shorts = [vid(f"s{i}", "shorts", 200_000) for i in range(10)]
+    longs = [vid(f"l{i}", "long", 1_000 * (i + 1)) for i in range(10)]
+    acc = {"handle": "x", "subscribers": 10_000, "videos": shorts + longs}
+
+    metrics.annotate_contribution([acc], CONFIG)
+    by_id = {v["video_id"]: v for v in acc["videos"]}
+
+    # 쇼츠 도달(20배)이 롱폼 최고(1배)보다 20배 크지만, 롱폼 안에서도 등급이 갈린다
+    assert by_id["l9"]["_contribution_grade"] == BEST
+    assert by_id["l0"]["_contribution_grade"] == WORST
+    assert by_id["s0"]["_contribution_grade"] == BEST
+
+
+def test_engagement_is_graded_within_each_format():
+    """참여율도 마찬가지 — 쇼츠는 조회수 대비 좋아요가 구조적으로 높다."""
+    videos = [vid(f"s{i}", "shorts", 10_000, likes=2_000) for i in range(10)]
+    videos += [vid(f"l{i}", "long", 10_000, likes=10 * (i + 1)) for i in range(10)]
+    acc = {"handle": "x", "subscribers": 10_000, "videos": videos}
+
+    metrics.annotate_channel(acc, CONFIG)
+    by_id = {v["video_id"]: v for v in videos}
+
+    assert by_id["l9"]["_engagement_grade"] == BEST     # 롱폼 중 최고
+    assert by_id["l0"]["_engagement_grade"] == WORST    # 롱폼 중 최저
+
+
 def test_contribution_none_when_subscribers_hidden():
     acc = {"handle": "x", "subscribers": None,
            "videos": [vid(f"a{i}", "long", 100) for i in range(5)]}

@@ -21,14 +21,25 @@ esac
 
 # 암호를 먼저 확보한다. 명령 치환 안에서 exit 해도 부모 스크립트는 멈추지 않으므로
 # 반드시 별도 문장으로 받아서 검사해야 한다.
-if ! DASHBOARD_PASSWORD="$(security find-generic-password -a "$USER" \
-      -s yt-reference-dashboard -w 2>/dev/null)" || [ -z "$DASHBOARD_PASSWORD" ]; then
+#
+# 1) 이미 환경변수에 있으면 그대로 쓴다 (맥이 아닌 환경 대비)
+# 2) 없으면 macOS 키체인에서 읽는다
+if [ -z "${DASHBOARD_PASSWORD:-}" ] && command -v security >/dev/null 2>&1; then
+  DASHBOARD_PASSWORD="$(security find-generic-password -a "$USER" \
+    -s yt-reference-dashboard -w 2>/dev/null)" || DASHBOARD_PASSWORD=""
+fi
+
+if [ -z "${DASHBOARD_PASSWORD:-}" ]; then
   cat >&2 <<'MSG'
-키체인에 접속 암호가 없습니다. 아래를 한 번만 실행해 주세요
-(GitHub Secret 의 DASHBOARD_PASSWORD 와 같은 값을 입력):
+접속 암호를 찾지 못했습니다. 둘 중 하나를 하시면 됩니다.
 
-  security add-generic-password -a "$USER" -s yt-reference-dashboard -w
+  맥 (한 번만 등록해 두면 이후 자동):
+    security add-generic-password -a "$USER" -s yt-reference-dashboard -w
 
+  그 외 환경 (실행할 때마다):
+    export DASHBOARD_PASSWORD='...'
+
+둘 다 GitHub Secret 의 DASHBOARD_PASSWORD 와 같은 값을 넣으면 됩니다.
 MSG
   exit 1
 fi

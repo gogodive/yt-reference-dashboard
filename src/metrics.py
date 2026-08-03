@@ -125,7 +125,11 @@ def format_medians(videos: list[dict], min_videos: int = DEFAULT_MIN_VIDEOS) -> 
 
 
 def annotate_channel(account: dict, config: dict | None = None) -> None:
-    """한 채널의 영상들에 성과도·참여율을 붙인다 (제자리 수정)."""
+    """한 채널의 영상들에 성과도·참여율을 붙인다 (제자리 수정).
+
+    참여율 등급도 포맷별로 매긴다. 쇼츠는 조회수 대비 좋아요가 롱폼보다
+    구조적으로 높아서, 섞어 놓으면 등급이 성과가 아니라 포맷을 말하게 된다.
+    """
     cfg = (config or {}).get("metrics", {})
     hot_ratio = cfg.get("hot_ratio", DEFAULT_HOT_RATIO)
     min_videos = cfg.get("min_videos", DEFAULT_MIN_VIDEOS)
@@ -135,8 +139,11 @@ def annotate_channel(account: dict, config: dict | None = None) -> None:
     medians = format_medians(videos, min_videos)
     account["_medians"] = medians
 
-    engagements = [e for e in (engagement_rate(v) for v in videos) if e is not None]
-    grade_engagement = make_quantile_grader(engagements, quantiles, min_videos)
+    engagement_graders = {}
+    for fmt in FORMATS:
+        values = [e for e in (engagement_rate(v) for v in videos
+                              if v.get("format") == fmt) if e is not None]
+        engagement_graders[fmt] = make_quantile_grader(values, quantiles, min_videos)
 
     for v in videos:
         median = medians.get(v.get("format"))
@@ -146,28 +153,36 @@ def annotate_channel(account: dict, config: dict | None = None) -> None:
         v["_is_hit"] = v["_perf_grade"] == BEST
         eng = engagement_rate(v)
         v["_engagement"] = eng
-        v["_engagement_grade"] = grade_engagement(eng)
+        grader = engagement_graders.get(v.get("format"))
+        v["_engagement_grade"] = grader(eng) if grader else None
 
 
 def annotate_contribution(accounts: list[dict], config: dict | None = None) -> None:
-    """기여도는 채널 간 비교이므로 전체를 모아 한 번에 등급화한다."""
+    """기여도는 채널 간 비교라 전체를 모아 등급화하되, 포맷별로 나눈다.
+
+    쇼츠는 구독자 대비 도달이 롱폼보다 압도적이라 섞어서 순위를 매기면
+    쇼츠가 상위 등급을 독식한다(실측: 쇼츠 94%가 Best). 그러면 등급이
+    "쇼츠냐 롱폼이냐"를 말할 뿐 성과를 말하지 못한다.
+    """
     cfg = (config or {}).get("metrics", {})
     min_videos = cfg.get("min_videos", DEFAULT_MIN_VIDEOS)
     quantiles = cfg.get("contribution_quantiles", {})
 
-    scores: list[float] = []
+    scores: dict[str, list[float]] = {fmt: [] for fmt in FORMATS}
     for acc in accounts:
         subs = acc.get("subscribers")
         for v in acc.get("videos", []):
             score = contribution_score(_views(v), subs)
             v["_contribution"] = score
-            if score is not None:
-                scores.append(score)
+            if score is not None and v.get("format") in scores:
+                scores[v["format"]].append(score)
 
-    grade = make_quantile_grader(scores, quantiles, min_videos)
+    graders = {fmt: make_quantile_grader(values, quantiles, min_videos)
+               for fmt, values in scores.items()}
     for acc in accounts:
         for v in acc.get("videos", []):
-            v["_contribution_grade"] = grade(v.get("_contribution"))
+            grader = graders.get(v.get("format"))
+            v["_contribution_grade"] = grader(v.get("_contribution")) if grader else None
 
 
 def annotate_all(accounts: list[dict], config: dict | None = None) -> None:
