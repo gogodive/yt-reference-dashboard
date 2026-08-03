@@ -200,6 +200,10 @@ class NotionClient:
             "properties": properties,
         })
 
+    def archive_page(self, page_id: str) -> dict:
+        """페이지를 휴지통으로 보낸다 (기준에서 빠진 '대기' 행 정리용)."""
+        return self._request("PATCH", f"pages/{page_id}", {"in_trash": True})
+
     # ---------- 상위 동작 ----------
 
     def monitored_channels(self, database_id: str) -> list[dict]:

@@ -60,6 +60,21 @@ def sync_notion_rows(notion_client, analysis_db: str, added: list[dict],
     return created
 
 
+def archive_dropped_rows(notion_client, removed: list[dict]) -> int:
+    """분석 대상에서 빠진 '대기' 행을 노션 휴지통으로 보낸다."""
+    archived = 0
+    for entry in removed:
+        page_id = entry.get("notion_page_id")
+        if not page_id:
+            continue
+        try:
+            notion_client.archive_page(page_id)
+            archived += 1
+        except Exception:  # noqa: BLE001 — 정리 실패가 수집을 막지 않는다
+            log.exception("노션 행 정리 실패: %s", entry.get("title"))
+    return archived
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -96,10 +111,12 @@ def main() -> int:
 
     metrics.annotate_all(accounts, config)
     hits = metrics.collect_hits(accounts)
+    targets = metrics.collect_analysis_targets(accounts, config)
 
     queue_path = data_dir / "hit_queue.json"
     entries = hitqueue.load(queue_path)
-    entries, added = hitqueue.sync(entries, hits, now.isoformat())
+    entries, added, removed = hitqueue.sync(entries, targets, now.isoformat())
+    archived = archive_dropped_rows(notion_client, removed)
     created = sync_notion_rows(notion_client, config["notion"]["analysis_database_id"],
                                added, entries, accounts)
     hitqueue.save(queue_path, entries)
@@ -115,8 +132,9 @@ def main() -> int:
         secure.build_gate_html(dashboard, password, title), encoding="utf-8")
 
     stats = hitqueue.counts(entries)
-    print(f"완료: 채널 {len(accounts)}개 · 히트 {len(hits)}편 "
-          f"(신규 {len(added)}, 노션 행 생성 {created}) · "
+    print(f"완료: 채널 {len(accounts)}개 · 성과도 Best {len(hits)}편 · "
+          f"분석 대상 {len(targets)}편 (신규 {len(added)}, 노션 행 생성 {created}, "
+          f"기준 미달 정리 {archived}) · "
           f"분석 대기 {stats['pending']} / 완료 {stats['done']}")
     return 0
 

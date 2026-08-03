@@ -33,28 +33,40 @@ def entry_from_hit(hit: dict, queued_at: str) -> dict:
     }
 
 
-def sync(entries: list[dict], hits: list[dict], queued_at: str) -> tuple[list[dict], list[dict]]:
-    """히트 목록을 큐에 반영한다.
+def sync(entries: list[dict], targets: list[dict],
+         queued_at: str) -> tuple[list[dict], list[dict], list[dict]]:
+    """분석 대상 목록을 큐에 반영한다.
 
     이미 있는 항목은 상태를 보존하고 성과 지표만 갱신한다.
-    반환값: (전체 큐, 이번에 새로 추가된 항목)
+    기준이 바뀌어 대상에서 빠진 **대기** 항목은 큐에서 뺀다.
+    이미 분석한 항목(done/failed)은 기준과 무관하게 보존한다.
+
+    반환값: (전체 큐, 새로 추가된 항목, 큐에서 빠진 항목)
     """
+    target_ids = {t["video_id"] for t in targets}
     by_id = {e["video_id"]: e for e in entries}
+
+    removed = [e for e in entries
+               if e.get("status") == PENDING and e["video_id"] not in target_ids]
+    for e in removed:
+        by_id.pop(e["video_id"], None)
+
     added: list[dict] = []
-    for hit in hits:
-        existing = by_id.get(hit["video_id"])
+    for target in targets:
+        existing = by_id.get(target["video_id"])
         if existing:
-            existing["ratio"] = round(hit["_perf_ratio"], 2) if hit.get("_perf_ratio") else None
-            existing["views"] = (hit.get("metrics") or {}).get("views")
+            existing["ratio"] = (round(target["_perf_ratio"], 2)
+                                 if target.get("_perf_ratio") else None)
+            existing["views"] = (target.get("metrics") or {}).get("views")
             continue
-        entry = entry_from_hit(hit, queued_at)
+        entry = entry_from_hit(target, queued_at)
         by_id[entry["video_id"]] = entry
         added.append(entry)
 
     merged = list(by_id.values())
     # 성과 배수 높은 순 — 백필 시 크게 터진 영상부터 분석한다
     merged.sort(key=lambda e: e.get("ratio") or 0, reverse=True)
-    return merged, added
+    return merged, added, removed
 
 
 def pending(entries: list[dict], limit: int | None = None) -> list[dict]:

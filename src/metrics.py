@@ -177,7 +177,7 @@ def annotate_all(accounts: list[dict], config: dict | None = None) -> None:
 
 
 def collect_hits(accounts: list[dict]) -> list[dict]:
-    """전체 채널의 히트 영상을 성과 배수 높은 순으로 모은다."""
+    """전체 채널의 히트 영상(성과도 Best)을 성과 배수 높은 순으로 모은다."""
     hits = []
     for acc in accounts:
         for v in acc.get("videos", []):
@@ -186,3 +186,44 @@ def collect_hits(accounts: list[dict]) -> list[dict]:
                              "_handle": acc.get("handle")})
     hits.sort(key=lambda v: v.get("_perf_ratio") or 0, reverse=True)
     return hits
+
+
+# ---------- 심층 분석 대상 선정 ----------
+
+DEFAULT_ANALYSIS = {
+    "long": {"min_ratio": 5.0, "min_views": 50_000},
+    "shorts": {"min_ratio": 10.0, "min_views": 100_000},
+}
+
+
+def is_analysis_target(video: dict, rules: dict) -> bool:
+    """영상을 끝까지 볼 만한가.
+
+    배수(채널 내 상대 성과)와 조회수(절대 도달)를 **둘 다** 넘어야 한다.
+    배수만 보면 조회수가 낮은 채널의 소소한 영상이 걸리고,
+    조회수만 보면 그 채널에선 평범한 영상이 걸린다.
+    """
+    rule = rules.get(video.get("format"))
+    if not rule:
+        return False
+    ratio = video.get("_perf_ratio")
+    views = (video.get("metrics") or {}).get("views")
+    if ratio is None or not isinstance(views, int):
+        return False
+    return ratio >= rule["min_ratio"] and views >= rule["min_views"]
+
+
+def collect_analysis_targets(accounts: list[dict],
+                             config: dict | None = None) -> list[dict]:
+    """심층 분석 큐에 넣을 영상을 성과 배수 높은 순으로 모은다."""
+    rules = (config or {}).get("analysis") or DEFAULT_ANALYSIS
+    targets = []
+    for acc in accounts:
+        for v in acc.get("videos", []):
+            hit = is_analysis_target(v, rules)
+            v["_analyze"] = hit
+            if hit:
+                targets.append({**v, "_channel": acc.get("title") or acc.get("handle"),
+                                "_handle": acc.get("handle")})
+    targets.sort(key=lambda v: v.get("_perf_ratio") or 0, reverse=True)
+    return targets

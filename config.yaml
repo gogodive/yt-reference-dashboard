@@ -10,13 +10,26 @@ collect:
   freeze_days: 30    # 게시 후 이 기간까지만 지표를 갱신, 이후 동결
 
 metrics:
-  hot_ratio: 3.0     # 같은 채널·같은 포맷 중앙값 대비 이 배수 이상이면 히트
-  min_videos: 5      # 포맷별 표본이 이보다 적으면 등급/히트를 판정하지 않음
+  hot_ratio: 3.0     # 성과도 Best(🔥) 경계 — 대시보드 등급 표시용
+  min_videos: 5      # 포맷별 표본이 이보다 적으면 등급을 판정하지 않음
   # 기여도(조회수/구독자) 등급 경계 — 전체 모니터링 채널 통합 분위수
   contribution_quantiles:
     best: 0.90
     good: 0.70
     normal: 0.40
+
+# 심층 분석(영상을 끝까지 보는 작업) 대상 선정 — 대시보드 등급과는 별개다.
+#
+# 쇼츠는 평범한 영상이 몇 천 회에 그치고 터진 건 수십만 회라 중앙값이 바닥에
+# 깔린다(실측 최대 186배). 그래서 쇼츠에는 롱폼보다 훨씬 높은 바를 적용한다.
+# 배수(채널 내 상대 성과)와 조회수(절대 도달)를 모두 넘어야 대상이 된다.
+analysis:
+  long:
+    min_ratio: 5.0
+    min_views: 50000
+  shorts:
+    min_ratio: 10.0
+    min_views: 100000
 
 dashboard:
   chart_years: 3

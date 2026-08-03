@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 from src import hitqueue, metrics
 from src.collect import collect_all
-from src.main import sync_notion_rows
+from src.main import archive_dropped_rows, sync_notion_rows
 from src.render import render_html
 
 KST = timezone(timedelta(hours=9))
@@ -19,6 +19,8 @@ CONFIG = {
     "collect": {"years": 3, "max_videos": 1000, "freeze_days": 30},
     "metrics": {"hot_ratio": 3.0, "min_videos": 5,
                 "contribution_quantiles": {"best": 0.90, "good": 0.70, "normal": 0.40}},
+    "analysis": {"long": {"min_ratio": 5.0, "min_views": 50_000},
+                 "shorts": {"min_ratio": 10.0, "min_views": 100_000}},
     "dashboard": {"title": "레퍼런스 유튜브 채널 분석"},
 }
 
@@ -50,8 +52,16 @@ class FakeYouTube:
         out = []
         for i, vid in enumerate(ids):
             is_short = i % 2 == 0
-            # 각 포맷의 마지막 하나만 크게 터지게 만든다
-            views = 100_000 if i in (10, 11) else (2_000 if is_short else 1_000)
+            # i=10,11 은 크게 터진 영상(분석 대상), i=8,9 는 배수는 높지만
+            # 절대 조회수가 낮은 영상(대시보드 🔥 는 되지만 분석 대상은 아님)
+            if i in (10, 11):
+                views = 100_000
+            elif i == 8:
+                views = 20_000
+            elif i == 9:
+                views = 8_000
+            else:
+                views = 2_000 if is_short else 1_000
             out.append({
                 "video_id": vid, "title": f"{vid} 제목",
                 "published_at": (NOW - timedelta(days=40 + i * 10)).isoformat(),
@@ -72,6 +82,7 @@ class FakeNotion:
     def __init__(self, existing_urls=()):
         self.updates = []
         self.created = []
+        self.archived = []
         self._existing = set(existing_urls)
 
     def monitored_channels(self, database_id):
@@ -96,19 +107,26 @@ class FakeNotion:
     def existing_analysis_urls(self, database_id):
         return self._existing
 
+    def archive_page(self, page_id):
+        self.archived.append(page_id)
+        return {"id": page_id}
 
-def run_pipeline(tmp_path, notion=None):
+
+def run_pipeline(tmp_path, notion=None, config=CONFIG):
     yt, nt = FakeYouTube(), (notion or FakeNotion())
-    accounts = collect_all(yt, nt, CONFIG, tmp_path, NOW)
-    metrics.annotate_all(accounts, CONFIG)
+    accounts = collect_all(yt, nt, config, tmp_path, NOW)
+    metrics.annotate_all(accounts, config)
     hits = metrics.collect_hits(accounts)
-    entries, added = hitqueue.sync(hitqueue.load(tmp_path / "hit_queue.json"),
-                                   hits, NOW.isoformat())
-    created = sync_notion_rows(nt, CONFIG["notion"]["analysis_database_id"],
+    targets = metrics.collect_analysis_targets(accounts, config)
+    entries, added, removed = hitqueue.sync(
+        hitqueue.load(tmp_path / "hit_queue.json"), targets, NOW.isoformat())
+    archived = archive_dropped_rows(nt, removed)
+    created = sync_notion_rows(nt, config["notion"]["analysis_database_id"],
                                added, entries, accounts)
     hitqueue.save(tmp_path / "hit_queue.json", entries)
     return {"yt": yt, "notion": nt, "accounts": accounts, "hits": hits,
-            "entries": entries, "added": added, "created": created}
+            "targets": targets, "entries": entries, "added": added,
+            "removed": removed, "created": created, "archived": archived}
 
 
 def test_pipeline_collects_and_writes_data_files(tmp_path):
@@ -136,23 +154,65 @@ def test_blank_channel_name_gets_filled_but_typed_name_is_kept(tmp_path):
     assert "채널명" not in by_page["p2"]    # 사용자가 적은 이름은 건드리지 않는다
 
 
-def test_hits_flow_into_queue_and_notion(tmp_path):
+def test_analysis_targets_flow_into_queue_and_notion(tmp_path):
     r = run_pipeline(tmp_path)
-    assert r["hits"], "히트가 하나도 안 잡히면 파이프라인 검증이 무의미하다"
-    assert len(r["added"]) == len(r["hits"])
-    assert r["created"] == len(r["hits"])
+    assert r["targets"], "대상이 하나도 안 잡히면 파이프라인 검증이 무의미하다"
+    assert len(r["added"]) == len(r["targets"])
+    assert r["created"] == len(r["targets"])
 
     # 큐 항목이 노션 페이지와 연결됐는지
     for entry in r["entries"]:
         assert entry["status"] == hitqueue.PENDING
         assert entry["notion_page_id"] is not None
-        assert entry["ratio"] >= 3.0
 
     # 노션 행에 제목·URL·성과도가 들어갔는지
     _, props = r["notion"].created[0]
     assert props["분석 상태"]["select"]["name"] == "대기"
     assert props["성과도"]["select"]["name"] == "Best"
     assert props["채널"]["relation"][0]["id"] in ("p1", "p2")
+
+
+def test_analysis_targets_are_stricter_than_dashboard_hits(tmp_path):
+    """대시보드 🔥(성과도 Best)보다 심층 분석 대상이 더 좁아야 한다."""
+    r = run_pipeline(tmp_path)
+    assert len(r["targets"]) < len(r["hits"])
+    for t in r["targets"]:
+        rule = CONFIG["analysis"][t["format"]]
+        assert t["_perf_ratio"] >= rule["min_ratio"]
+        assert t["metrics"]["views"] >= rule["min_views"]
+
+
+def test_tightening_criteria_drops_pending_rows_from_queue_and_notion(tmp_path):
+    """기준을 올리면 아직 분석 안 한 행은 큐에서 빠지고 노션에서도 정리된다."""
+    first = run_pipeline(tmp_path)
+    assert first["targets"]
+
+    strict = {**CONFIG, "analysis": {"long": {"min_ratio": 999, "min_views": 999_999_999},
+                                     "shorts": {"min_ratio": 999, "min_views": 999_999_999}}}
+    second = run_pipeline(tmp_path, config=strict)
+
+    assert second["targets"] == []
+    assert len(second["removed"]) == len(first["targets"])
+    assert second["archived"] == len(first["targets"])
+    assert second["entries"] == []
+
+
+def test_completed_analyses_survive_criteria_change(tmp_path):
+    """이미 분석을 마친 영상은 기준이 바뀌어도 큐에서 지우면 안 된다."""
+    first = run_pipeline(tmp_path)
+    entries = first["entries"]
+    hitqueue.mark(entries, entries[0]["video_id"], hitqueue.DONE,
+                  notion_page_id="page-done", analyzed_at="2026-08-04")
+    hitqueue.save(tmp_path / "hit_queue.json", entries)
+
+    strict = {**CONFIG, "analysis": {"long": {"min_ratio": 999, "min_views": 999_999_999},
+                                     "shorts": {"min_ratio": 999, "min_views": 999_999_999}}}
+    second = run_pipeline(tmp_path, config=strict)
+
+    survived = [e for e in second["entries"] if e["status"] == hitqueue.DONE]
+    assert len(survived) == 1
+    assert survived[0]["notion_page_id"] == "page-done"
+    assert "page-done" not in second["notion"].archived
 
 
 def test_second_run_does_not_duplicate_notion_rows(tmp_path):
