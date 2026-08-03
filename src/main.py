@@ -16,7 +16,7 @@ from pathlib import Path
 
 from src import hitqueue, metrics, secure
 from src.collect import collect_all, load_config
-from src.notion import NotionClient, analysis_row_payload
+from src.notion import NotionClient, analysis_row_payload, metric_properties
 from src.render import render_html
 from src.youtube import YouTubeClient
 
@@ -58,6 +58,34 @@ def sync_notion_rows(notion_client, analysis_db: str, added: list[dict],
                       notion_page_id=page["id"])
         created += 1
     return created
+
+
+def refresh_metric_properties(notion_client, entries: list[dict],
+                              accounts: list[dict], skip_ids: set[str]) -> int:
+    """기존 노션 행의 지표 속성을 최신 값으로 다시 채운다.
+
+    조회수는 30일까지 갱신되고 지표 정의도 바뀔 수 있는데, 행은 만들 때
+    한 번만 채워지므로 그대로 두면 노션과 대시보드가 어긋난다.
+    분석으로 채운 속성(콘텐츠 유형·후킹 유형·주제)과 본문은 건드리지 않는다.
+    """
+    videos_by_id = {v["video_id"]: v for a in accounts for v in a.get("videos", [])}
+    updated = 0
+    for entry in entries:
+        page_id = entry.get("notion_page_id")
+        if not page_id or entry["video_id"] in skip_ids:
+            continue
+        video = videos_by_id.get(entry["video_id"])
+        if not video:
+            continue
+        props = metric_properties(video)
+        if not props:
+            continue
+        try:
+            notion_client.update_page(page_id, props)
+            updated += 1
+        except Exception:  # noqa: BLE001 — 갱신 실패가 수집을 막지 않는다
+            log.exception("노션 지표 갱신 실패: %s", entry.get("title"))
+    return updated
 
 
 def archive_dropped_rows(notion_client, removed: list[dict]) -> int:
@@ -119,6 +147,9 @@ def main() -> int:
     archived = archive_dropped_rows(notion_client, removed)
     created = sync_notion_rows(notion_client, config["notion"]["analysis_database_id"],
                                added, entries, accounts)
+    # 방금 만든 행은 이미 최신값이므로 건너뛴다
+    refreshed = refresh_metric_properties(
+        notion_client, entries, accounts, {e["video_id"] for e in added})
     hitqueue.save(queue_path, entries)
 
     # 수집 원본은 암호화해서 한 덩어리로만 커밋한다 (public 저장소 노출 방지)
@@ -134,7 +165,7 @@ def main() -> int:
     stats = hitqueue.counts(entries)
     print(f"완료: 채널 {len(accounts)}개 · 성과도 Best {len(hits)}편 · "
           f"분석 대상 {len(targets)}편 (신규 {len(added)}, 노션 행 생성 {created}, "
-          f"기준 미달 정리 {archived}) · "
+          f"지표 갱신 {refreshed}, 기준 미달 정리 {archived}) · "
           f"분석 대기 {stats['pending']} / 완료 {stats['done']}")
     return 0
 

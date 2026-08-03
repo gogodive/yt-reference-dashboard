@@ -120,6 +120,28 @@ def channel_failure_payload(error: str, fetched_at: str) -> dict:
     }
 
 
+def metric_properties(video: dict) -> dict:
+    """지표 속성만 추린다.
+
+    지표 정의가 바뀌거나 조회수가 갱신되면 기존 행도 다시 채워야 하므로
+    행 생성과 갱신이 같은 값을 쓰도록 한 곳에 모아 둔다.
+    분석으로 채우는 속성(콘텐츠 유형·후킹 유형·주제)은 여기 없다.
+    """
+    props: dict = {}
+    views = (video.get("metrics") or {}).get("views")
+    if isinstance(views, int):
+        props[A_VIEWS] = {"number": views}
+    if video.get("_perf_ratio") is not None:
+        props[A_RATIO] = {"number": round(video["_perf_ratio"], 2)}
+    if video.get("_perf_grade"):
+        props[A_PERFORMANCE] = {"select": {"name": video["_perf_grade"]}}
+    if video.get("_contribution_grade"):
+        props[A_CONTRIBUTION] = {"select": {"name": video["_contribution_grade"]}}
+    if video.get("_engagement") is not None:
+        props[A_ENGAGEMENT] = {"number": round(video["_engagement"], 4)}
+    return props
+
+
 def analysis_row_payload(video: dict, channel_page_id: str | None = None) -> dict:
     """히트 영상 → '성과 좋은 영상 분석' DB 의 대기 행 properties."""
     props: dict = {
@@ -134,18 +156,7 @@ def analysis_row_payload(video: dict, channel_page_id: str | None = None) -> dic
         props[A_PUBLISHED] = {"date": {"start": video["published_at"][:10]}}
     if video.get("duration"):
         props[A_DURATION] = {"number": int(video["duration"])}
-
-    views = (video.get("metrics") or {}).get("views")
-    if isinstance(views, int):
-        props[A_VIEWS] = {"number": views}
-    if video.get("_perf_ratio") is not None:
-        props[A_RATIO] = {"number": round(video["_perf_ratio"], 2)}
-    if video.get("_perf_grade"):
-        props[A_PERFORMANCE] = {"select": {"name": video["_perf_grade"]}}
-    if video.get("_contribution_grade"):
-        props[A_CONTRIBUTION] = {"select": {"name": video["_contribution_grade"]}}
-    if video.get("_engagement") is not None:
-        props[A_ENGAGEMENT] = {"number": round(video["_engagement"], 4)}
+    props.update(metric_properties(video))
     if channel_page_id:
         props[A_CHANNEL] = {"relation": [{"id": channel_page_id}]}
     return props

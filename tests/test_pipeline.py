@@ -8,7 +8,8 @@ from datetime import datetime, timedelta, timezone
 
 from src import hitqueue, metrics
 from src.collect import collect_all
-from src.main import archive_dropped_rows, sync_notion_rows
+from src.main import (archive_dropped_rows, refresh_metric_properties,
+                      sync_notion_rows)
 from src.render import render_html
 
 KST = timezone(timedelta(hours=9))
@@ -123,10 +124,13 @@ def run_pipeline(tmp_path, notion=None, config=CONFIG):
     archived = archive_dropped_rows(nt, removed)
     created = sync_notion_rows(nt, config["notion"]["analysis_database_id"],
                                added, entries, accounts)
+    refreshed = refresh_metric_properties(nt, entries, accounts,
+                                          {e["video_id"] for e in added})
     hitqueue.save(tmp_path / "hit_queue.json", entries)
     return {"yt": yt, "notion": nt, "accounts": accounts, "hits": hits,
             "targets": targets, "entries": entries, "added": added,
-            "removed": removed, "created": created, "archived": archived}
+            "removed": removed, "created": created, "archived": archived,
+            "refreshed": refreshed}
 
 
 def test_pipeline_collects_and_writes_data_files(tmp_path):
@@ -195,6 +199,26 @@ def test_tightening_criteria_drops_pending_rows_from_queue_and_notion(tmp_path):
     assert len(second["removed"]) == len(first["targets"])
     assert second["archived"] == len(first["targets"])
     assert second["entries"] == []
+
+
+def test_existing_rows_get_fresh_metrics_but_not_on_creation(tmp_path):
+    """행을 만든 날엔 이미 최신값이라 갱신하지 않고, 이후 실행부터 갱신한다."""
+    first = run_pipeline(tmp_path)
+    assert first["refreshed"] == 0            # 방금 만든 행은 건너뛴다
+
+    second = run_pipeline(tmp_path, notion=FakeNotion(
+        existing_urls={e["url"] for e in first["entries"]}))
+    assert second["refreshed"] == len(first["entries"])
+
+    # 지표만 갱신하고 분석으로 채우는 속성은 건드리지 않는다
+    metric_updates = [props for _, props in second["notion"].updates
+                      if "성과 배수" in props]
+    assert metric_updates
+    for props in metric_updates:
+        assert "제목" not in props
+        assert "분석 상태" not in props
+        assert "콘텐츠 유형" not in props
+        assert "후킹 유형" not in props
 
 
 def test_completed_analyses_survive_criteria_change(tmp_path):
