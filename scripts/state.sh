@@ -73,7 +73,18 @@ PY
       echo "변경 없음 — 푸시 생략"
     else
       git commit -q -m "chore: 영상 분석 진행 상태 갱신"
-      git pull --rebase -q origin main
+      # state.enc 는 암호화할 때마다 salt·nonce 가 새로 생겨 내용이 같아도 바이트가
+      # 통째로 달라진다. 그래서 그 사이 자동 수집이 한 번이라도 올라오면 rebase 가
+      # 반드시 충돌한다. 텍스트 병합이 불가능하므로 복호화해서 직접 합친다.
+      if ! git pull --rebase -q origin main; then
+        "$PY" scripts/merge_state.py || {
+          echo "상태 병합 실패 — rebase 가 멈춰 있습니다. 확인 후" >&2
+          echo "  git rebase --abort  또는  git rebase --continue" >&2
+          exit 1
+        }
+        git add data/state.enc
+        GIT_EDITOR=true git rebase --continue >/dev/null
+      fi
       git push -q origin main
       echo "푸시 완료"
     fi
