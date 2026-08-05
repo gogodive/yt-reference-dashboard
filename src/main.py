@@ -14,7 +14,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from src import hitqueue, metrics, secure
+from src import hitqueue, metrics, notion, secure
 from src.collect import collect_all, load_config
 from src.notion import NotionClient, analysis_row_payload, metric_properties
 from src.render import render_html
@@ -103,6 +103,26 @@ def archive_dropped_rows(notion_client, removed: list[dict]) -> int:
     return archived
 
 
+def update_hub_callout(notion_client, hub_page_id: str | None, now: datetime,
+                       accounts: list[dict], stats: dict) -> None:
+    """허브 페이지 맨 위에 마지막 수집 시각을 한 줄로 남긴다.
+
+    대시보드를 열지 않아도 "오늘 것이 맞는지"를 노션에서 바로 알 수 있게 한다.
+    실패해도 수집은 성공으로 둔다 — 표시용이라 파이프라인을 막을 이유가 없다.
+    """
+    if not hub_page_id:
+        return
+    videos = sum(len(a.get("videos", [])) for a in accounts)
+    text = (f"{notion.RUN_CALLOUT_PREFIX}: {now:%Y-%m-%d %H:%M} KST"
+            f" · 채널 {len(accounts)}개 · 영상 {videos:,}편"
+            f" · 분석 대기 {stats['pending']} / 완료 {stats['done']}")
+    try:
+        action = notion_client.sync_run_callout(hub_page_id, text)
+        log.info("허브 콜아웃 %s", action)
+    except Exception:  # noqa: BLE001
+        log.exception("허브 콜아웃 갱신 실패 — 수집 결과에는 영향 없음")
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -163,6 +183,8 @@ def main() -> int:
         secure.build_gate_html(dashboard, password, title), encoding="utf-8")
 
     stats = hitqueue.counts(entries)
+    update_hub_callout(notion_client, config["notion"].get("hub_page_id"),
+                       now, accounts, stats)
     print(f"완료: 채널 {len(accounts)}개 · 성과도 Best {len(hits)}편 · "
           f"분석 대상 {len(targets)}편 (신규 {len(added)}, 노션 행 생성 {created}, "
           f"지표 갱신 {refreshed}, 기준 미달 정리 {archived}) · "

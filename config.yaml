@@ -3,6 +3,8 @@ notion:
   channel_database_id: "3b139eba97ed8000bcfcf1ff844365c3"
   # 🎯 성과 좋은 영상 분석 — 히트 영상의 분석 결과가 쌓이는 곳
   analysis_database_id: "e30243b071c74022931a49e4c9d6b4df"
+  # 레퍼런스 유튜브 채널 분석 — 허브 페이지. 맨 위 콜아웃에 마지막 수집 시각을 남긴다
+  hub_page_id: "3b139eba97ed8091ab92c95318343eed"
 
 collect:
   years: 3           # 최근 몇 년치를 수집할지

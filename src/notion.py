@@ -21,6 +21,9 @@ API_BASE = "https://api.notion.com/v1"
 NOTION_VERSION = "2022-06-28"
 RATE_LIMIT_SLEEP = 0.34  # 노션 권장 한도는 초당 3회
 
+# 허브 페이지 맨 위 콜아웃을 매번 새로 만들지 않고 찾아 갱신하기 위한 표식
+RUN_CALLOUT_PREFIX = "마지막 수집"
+
 # ⭐ 레퍼런스 유튜브 채널
 P_NAME = "채널명"
 P_ADDRESS = "채널 주소"
@@ -214,6 +217,58 @@ class NotionClient:
     def archive_page(self, page_id: str) -> dict:
         """페이지를 휴지통으로 보낸다 (기준에서 빠진 '대기' 행 정리용)."""
         return self._request("PATCH", f"pages/{page_id}", {"in_trash": True})
+
+    # ---------- 블록 ----------
+
+    def block_children(self, block_id: str) -> list[dict]:
+        results: list[dict] = []
+        cursor = None
+        while True:
+            path = f"blocks/{block_id}/children?page_size=100"
+            if cursor:
+                path += f"&start_cursor={cursor}"
+            resp = self._request("GET", path)
+            results.extend(resp.get("results", []))
+            if not resp.get("has_more"):
+                break
+            cursor = resp["next_cursor"]
+        return results
+
+    def update_block(self, block_id: str, payload: dict) -> dict:
+        return self._request("PATCH", f"blocks/{block_id}", payload)
+
+    def append_blocks(self, block_id: str, children: list[dict],
+                      after: str | None = None) -> dict:
+        body: dict = {"children": children}
+        if after:
+            body["after"] = after
+        return self._request("PATCH", f"blocks/{block_id}/children", body)
+
+    def sync_run_callout(self, page_id: str, text: str) -> str:
+        """허브 페이지 맨 위 콜아웃에 마지막 수집 시각을 남긴다.
+
+        같은 블록을 계속 갱신한다. 없으면 맨 위에 새로 만든다.
+        찾는 기준은 아이콘이 아니라 본문 접두사다 — 사용자가 아이콘을 바꿔도
+        블록이 하나 더 생기지 않는다.
+        """
+        for block in self.block_children(page_id):
+            if block.get("type") != "callout":
+                continue
+            spans = block["callout"].get("rich_text", [])
+            head = "".join(s.get("plain_text", "") for s in spans)
+            if head.startswith(RUN_CALLOUT_PREFIX):
+                self.update_block(block["id"], {"callout": _text(text)})
+                return "updated"
+        self.append_blocks(page_id, [{
+            "object": "block",
+            "type": "callout",
+            "callout": {
+                **_text(text),
+                "icon": {"type": "emoji", "emoji": "🕘"},
+                "color": "gray_background",
+            },
+        }])
+        return "created"
 
     # ---------- 상위 동작 ----------
 

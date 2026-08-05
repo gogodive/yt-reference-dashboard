@@ -148,6 +148,8 @@ def annotate_channel(account: dict, config: dict | None = None) -> None:
     for v in videos:
         median = medians.get(v.get("format"))
         ratio = performance_ratio(_views(v), median) if median else None
+        # 배수는 중앙값이 움직이면 같이 움직인다. 나중에 재현하려면 분모도 있어야 한다.
+        v["_median"] = median
         v["_perf_ratio"] = ratio
         v["_perf_grade"] = grade_performance(ratio, hot_ratio)
         v["_is_hit"] = v["_perf_grade"] == BEST

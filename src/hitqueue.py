@@ -24,6 +24,10 @@ def entry_from_hit(hit: dict, queued_at: str) -> dict:
         "format": hit.get("format"),
         "ratio": round(hit["_perf_ratio"], 2) if hit.get("_perf_ratio") else None,
         "views": (hit.get("metrics") or {}).get("views"),
+        # 배수의 분모. 채널에 새 영상이 쌓이면 중앙값이 움직여서 배수도 따라 움직인다.
+        # 이 값을 남겨야 리포트에 적힌 배수를 나중에 그대로 재현할 수 있다.
+        "median": round(hit["_median"], 1) if hit.get("_median") else None,
+        "metrics_at": queued_at,
         "published_at": hit.get("published_at"),
         "duration": hit.get("duration"),
         "status": PENDING,
@@ -55,9 +59,17 @@ def sync(entries: list[dict], targets: list[dict],
     for target in targets:
         existing = by_id.get(target["video_id"])
         if existing:
+            # 분석이 끝난 항목은 지표를 얼린다. 리포트가 인용한 숫자가 계속 움직이면
+            # 본문과 노션 속성이 어긋나고, 어느 쪽이 맞는지 알 수 없게 된다.
+            # (실제로 done 71편 중 20편의 배수가 중앙값 이동으로 어긋났다)
+            if existing.get("status") != PENDING:
+                continue
             existing["ratio"] = (round(target["_perf_ratio"], 2)
                                  if target.get("_perf_ratio") else None)
             existing["views"] = (target.get("metrics") or {}).get("views")
+            existing["median"] = (round(target["_median"], 1)
+                                  if target.get("_median") else None)
+            existing["metrics_at"] = queued_at
             continue
         entry = entry_from_hit(target, queued_at)
         by_id[entry["video_id"]] = entry

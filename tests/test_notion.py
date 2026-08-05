@@ -112,3 +112,57 @@ def test_analysis_row_payload_skips_missing_fields():
 def test_long_titles_are_truncated():
     props = notion.analysis_row_payload({**HIT, "title": "가" * 3000})
     assert len(props["제목"]["title"][0]["text"]["content"]) == 2000
+
+
+# ---------- 허브 콜아웃 ----------
+
+class FakeCallout(notion.NotionClient):
+    """API 대신 호출 기록만 남기는 클라이언트."""
+
+    def __init__(self, children):
+        self._children = children
+        self.updated: list[tuple] = []
+        self.appended: list[list] = []
+
+    def block_children(self, block_id):
+        return self._children
+
+    def update_block(self, block_id, payload):
+        self.updated.append((block_id, payload))
+        return {}
+
+    def append_blocks(self, block_id, children, after=None):
+        self.appended.append(children)
+        return {}
+
+
+def callout_block(block_id, text):
+    return {"id": block_id, "type": "callout",
+            "callout": {"rich_text": [{"plain_text": text}]}}
+
+
+def test_run_callout_updates_existing_block():
+    """매일 도는 작업이라 블록이 쌓이면 안 된다 — 같은 블록을 갱신해야 한다."""
+    client = FakeCallout([
+        {"id": "b0", "type": "paragraph", "paragraph": {"rich_text": []}},
+        callout_block("b1", f"{notion.RUN_CALLOUT_PREFIX}: 2026-08-05 07:10 KST"),
+    ])
+    assert client.sync_run_callout("hub", f"{notion.RUN_CALLOUT_PREFIX}: 새 값") == "updated"
+    assert client.appended == []
+    block_id, payload = client.updated[0]
+    assert block_id == "b1"
+    assert payload["callout"]["rich_text"][0]["text"]["content"].endswith("새 값")
+
+
+def test_run_callout_creates_when_absent():
+    client = FakeCallout([{"id": "b0", "type": "paragraph", "paragraph": {"rich_text": []}}])
+    assert client.sync_run_callout("hub", "마지막 수집: 값") == "created"
+    assert client.updated == []
+    assert client.appended[0][0]["callout"]["icon"]["emoji"] == "🕘"
+
+
+def test_run_callout_ignores_other_callouts():
+    """페이지에 있는 다른 콜아웃(안내문 등)을 덮어쓰면 안 된다."""
+    client = FakeCallout([callout_block("b1", "이 대시보드는 매일 갱신됩니다")])
+    assert client.sync_run_callout("hub", "마지막 수집: 값") == "created"
+    assert client.updated == []
